@@ -1,0 +1,11 @@
+scripting.sakibalhasa.xyz {
+    # Backend API — forward /api/* to NestJS
+    handle /api/* {
+        reverse_proxy server:3003
+    }
+
+    # Frontend — everything else goes to Next.js
+    handle {
+        reverse_proxy client:3000
+    }
+}

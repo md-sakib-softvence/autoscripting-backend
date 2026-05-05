@@ -1,15 +1,31 @@
-# ──────────────────────────────────────────────────────────────
-# docker-compose.yaml
-# Uses Neon cloud DB — no local postgres/redis needed
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# VPS docker-compose.yaml — with Caddy reverse proxy + SSL
+# Copy this file + Caddyfile to ~/dynamic-scraper on VPS
+# Run: docker-compose down && docker-compose pull && docker-compose up -d
+# ─────────────────────────────────────────────────────────────
 
 services:
+  # ── Caddy (Reverse Proxy + Auto SSL) ──────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: dynamic-scraper_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+      - client
+    networks:
+      - app_network
+
   # ── Backend Server ─────────────────────────────────────────
   server:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: sakib/dynamic-scraper-server:latest
+    image: sakibsakib/dynamic-scraper-server:latest
     container_name: dynamic-scraper_server
     restart: always
     environment:
@@ -17,27 +33,21 @@ services:
       APP_PORT: 3003
       API_PREFIX: api/v1
       DATABASE_URL: postgresql://neondb_owner:npg_vom1OMDnH6tE@ep-frosty-thunder-amaw43wi-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-    ports:
-      - "${HOST_PORT:-3003}:3003"
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome-stable
     networks:
       - app_network
 
   # ── Frontend Client ────────────────────────────────────────
   client:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    image: sakib/dynamic-scraper-client:latest
+    image: sakibsakib/dynamic-scraper-client:latest
     container_name: dynamic-scraper_client
     restart: always
-    environment:
-      NEXT_PUBLIC_API_URL: http://server:3003
-    depends_on:
-      - server
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
     networks:
       - app_network
+
+volumes:
+  caddy_data:
+  caddy_config:
 
 networks:
   app_network:

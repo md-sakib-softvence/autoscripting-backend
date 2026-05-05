@@ -12,41 +12,42 @@ export class ScraperService {
     this.logger.log(`🔍 Scraping URL: ${url}`);
 
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: 'new' as any,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote',
         '--disable-blink-features=AutomationControlled',
       ],
     });
 
     try {
       const page = await browser.newPage();
-
-      // Set realistic User-Agent
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-      // Set extra headers
-      await page.setExtraHTTPHeaders({
-        'Accept-Language': 'en-US,en;q=0.9',
-      });
+      
+      this.logger.log(`📱 Setting User-Agent...`);
+      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
       await page.setViewport({ width: 1280, height: 800 });
-      await page.goto(url, { waitUntil: 'networkidle2' });
+      
+      this.logger.log(`🌐 Navigating to: ${url}`);
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-      // Auto-scroll to trigger lazy loading
+      const title = await page.title();
+      this.logger.log(`📄 Page Title: ${title}`);
+
+      // Auto-scroll logic...
       await page.evaluate(async () => {
         await new Promise((resolve) => {
           let totalHeight = 0;
-          const distance = 100;
+          const distance = 400;
           const timer = setInterval(() => {
             const scrollHeight = document.body.scrollHeight;
             window.scrollBy(0, distance);
             totalHeight += distance;
-
-            if (totalHeight >= scrollHeight || totalHeight > 5000) { // Limit to 5k pixels or end
+            if (totalHeight >= scrollHeight || totalHeight > 3000) {
               clearInterval(timer);
               resolve(true);
             }
@@ -54,42 +55,21 @@ export class ScraperService {
         });
       });
 
-      // Extract Images (Improved)
+      // Extract Images
       const images = await page.evaluate(() => {
         const results = new Set<string>();
-
-        // Check all images
         document.querySelectorAll('img').forEach((img) => {
           if (img.src && img.src.startsWith('http')) results.add(img.src);
-
-          // Handle srcset (pick the last one usually highest quality)
-          if (img.srcset) {
-            const sources = img.srcset.split(',').map(s => s.trim().split(' ')[0]);
-            sources.forEach(src => {
-              if (src.startsWith('http')) results.add(src);
-              else if (src.startsWith('/')) results.add(window.location.origin + src);
-            });
-          }
-
-          // Handle data-src or data-original (lazy loading)
-          ['data-src', 'data-original', 'data-lazy'].forEach(attr => {
-            const val = img.getAttribute(attr);
-            if (val && val.startsWith('http')) results.add(val);
-          });
-        });
-
-        // Check picture tags
-        document.querySelectorAll('picture source').forEach((source: any) => {
-          if (source.srcset) {
-            const sources = source.srcset.split(',').map(s => s.trim().split(' ')[0]);
-            sources.forEach(src => {
-              if (src.startsWith('http')) results.add(src);
-            });
+          if (img.getAttribute('data-src')) {
+            const ds = img.getAttribute('data-src');
+            if (ds.startsWith('http')) results.add(ds);
+            else if (ds.startsWith('/')) results.add(window.location.origin + ds);
           }
         });
-
         return Array.from(results);
       });
+
+      this.logger.log(`📸 Found ${images.length} images`);
 
       // Extract Links
       const links = await page.evaluate(() => {
